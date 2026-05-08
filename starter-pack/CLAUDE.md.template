@@ -1,0 +1,99 @@
+# ~/.claude/CLAUDE.md — Global Conventions
+
+Global instructions for Claude Code, applied to every session unless a repo-level CLAUDE.md overrides.
+
+This template distills seven conventions from a 2026 retrospective on long-running Claude Code sessions. Each rule prevents a specific high-cost failure mode observed in production work; the lesson it cites lives in [`../docs/lessons/`](../docs/lessons/).
+
+---
+
+## Conventions from the 2026 retrospective
+
+A multi-angle analysis of ~31 archived Claude Code sessions found that every high-cost failure mode was a **continuity failure** — the model losing track of the user's intent, rules, or running state across turns. The rules below prevent the specific patterns that cost the most time across Feb–Sep 2026.
+
+### 1. Diagnosis vs. directive
+
+If the user's turn is a diagnosis, observation, or question — **don't act; ask**. Before editing code in response to "I think X is wrong" or "the bug seems to be Y" or "should we X?", respond with something like:
+
+> Reading this as <a diagnosis / a question about X>, not an instruction to change X. Should I investigate, or fix? Or is this just a note to keep in mind?
+
+Only act on turns containing an explicit imperative verb (`fix`, `change`, `edit`, `replace`, `restart`, `run`, `write`, `add`, `remove`). In Swedish, watch for the interrogative/imperative ambiguity — `"kanske vi ska X?"` or `"ska vi X?"` are questions, not directives.
+
+*(Source: [`../docs/lessons/instruction_adherence.md`](../docs/lessons/instruction_adherence.md) §1, §6 — cost: three explicit STOPs in one session; live production fetch code edited while the user was asking status questions.)*
+
+### 2. Echo-back discipline
+
+When the user states a **session-wide rule** or **tool preference**, repeat it verbatim in the response and flag it as registered. Carry it as a precondition across subsequent turns, not a one-shot instruction.
+
+Example — user says *"use the preview tool, not Chrome DevTools"*. Response should include: *"Registered: using the preview tool, not Chrome DevTools, for the rest of this session."* Then every subsequent turn that involves browser inspection should re-cite this before acting.
+
+When writing a `/checkpoint` snapshot, populate **Active rules (echo-back)** with every such rule stated this session.
+
+*(Source: [`../docs/lessons/instruction_adherence.md`](../docs/lessons/instruction_adherence.md) §2 — cost: rule stated once at turn 64, violated at turn 82 of a 1,294-turn session.)*
+
+### 3. Running code is read-only
+
+Code that is **executing** — on a remote cluster, inside a running server, inside an active training job, inside a live fetch — is read-only. Don't edit it, refactor it, or propose structural changes to it until the user uses an explicit imperative verb (`fix`, `change`, `edit`, `restart`).
+
+If the user asks a question about running code ("what does this do?" "why is it slow?" "is this the bug?"), answer the question. Do not preemptively edit.
+
+A `PreToolUse` hook at `~/.claude/hooks/active-jobs-guard.sh` (see [`hooks/active-jobs-guard.sh`](hooks/active-jobs-guard.sh)) enforces this rule on `Edit`/`Write`. To register a running job, drop a sentinel file at `~/.claude/active-jobs/<slug>.json`. The hook returns `permissionDecision: "ask"` when an edit targets a locked path, surfacing a UI confirmation that the user must approve.
+
+*(Source: [`../docs/lessons/pitfalls.md`](../docs/lessons/pitfalls.md) §5 — cost: a long, expensive remote fetch was disrupted when the model edited the code that drove it while the user was asking status questions.)*
+
+### 4. Mid-session re-anchor
+
+In sessions past ~50 turns, **restate the top-level goal** before starting a new sub-topic. Invoke the `/checkpoint` skill to persist the state.
+
+Sessions past 1,000 turns without mid-session re-anchor drift across 4+ sub-topics. If you notice the session has shifted topic without explicit user direction, stop and ask: *"We've moved from <X> to <Y> — is that intended, or should we return to <X>?"*
+
+**Checkpoint cadence:** at ~50 turns and after any milestone (≥3 commits or a named-feature ship), **offer** a checkpoint — don't auto-write, ask. Two modes per the skill doc: *drift* (every ~50 turns; recovery anchor) and *milestone* (on completion; what shipped, what's next). Skipping a useful checkpoint costs the next session; writing an unneeded one costs ~30s. Asymmetry favours offering.
+
+*(Source: [`../docs/lessons/pitfalls.md`](../docs/lessons/pitfalls.md) §2 — cost: 22 corrections in a single 130k-word session, many undoing work on the wrong sub-topic.)*
+
+### 5. Front-load the first turn
+
+For non-trivial work, if the user's turn 0 doesn't include **paths + env + prior attempts + non-goals**, ask for them before diving in. The `/brief` skill expands a one-liner into the full briefing shape.
+
+For trivial work (single-file edit, quick question, one-command shell), don't force the briefing. Use judgment: if the task needs more than 3 tool calls or touches more than 2 files, it's non-trivial.
+
+*(Source: [`../docs/lessons/what_worked.md`](../docs/lessons/what_worked.md) §1 — the briefing-prompt opener was the load-bearing move of the year; all four analytical lenses independently named it.)*
+
+### 6. Verify work before declaring done
+
+For every non-trivial change, include a **verification artifact**: a test that passes, a screenshot comparison, a linter/typechecker clean, an expected-output diff, or a shell command whose output confirms correctness. If you cannot verify it, do not commit it. If verification is impossible in this environment, say so explicitly and ask the user to verify before closing the task.
+
+For trivial changes (typo fix, log line added, variable rename in one file), skip the artifact but still state *how* a human could verify if they wanted.
+
+*(Source: Anthropic Best Practices §1 "Give Claude a way to verify its work" — "This is the single highest-leverage thing you can do." See also [`../docs/lessons/external_patterns.md`](../docs/lessons/external_patterns.md) §Convergence 02.)*
+
+### 7. Attribute agent-authored commits
+
+Every commit authored during a Claude session must end with the trailer:
+
+```
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+```
+
+Human stays as `author`; the agent identity goes in the trailer so `git blame` and `git log --author=` still resolve to the human who asked for the change.
+
+A `PreToolUse` hook at `~/.claude/hooks/co-authored-by.sh` (see [`hooks/co-authored-by.sh`](hooks/co-authored-by.sh)) returns `permissionDecision: "ask"` when a `git commit` is about to run without the trailer, surfacing a UI confirmation. Approve to ship as-is (rare — e.g. user pre-composed the message); deny to regenerate the commit with the trailer appended.
+
+*(Source: [`../docs/lessons/multi_user_multi_agent.md`](../docs/lessons/multi_user_multi_agent.md) §C5 — attribution is the unsolved git-layer governance problem. Signed commits + `Co-authored-by:` trailers are the community workaround until native tooling lands.)*
+
+---
+
+## Skills available
+
+- **`/checkpoint`** — mid-session state snapshot to `~/.claude/checkpoints/<repo>/`. Use every ~50 turns in long sessions.
+- **`/brief`** — expand a one-line task into the full briefing template. Use at the start of non-trivial work.
+- **`/spec`** — interview-driven SPEC.md for ambiguous features. Hands off to a fresh session for execution.
+- **`/review`** — spawn a fresh-context reviewer subagent against a recent change. Writer/reviewer pattern from multi-agent research.
+- **`/recall`** — retrieve past session context from `~/.claude/checkpoints/`. Use at the start of a fresh session in any repo where you've previously taken checkpoints.
+
+---
+
+## File locations
+
+- Checkpoints: `~/.claude/checkpoints/<repo>/`
+- Skills: `~/.claude/skills/<name>/SKILL.md`
+- Hooks: `~/.claude/hooks/<name>.sh` (registered in `~/.claude/settings.json`)
