@@ -2,13 +2,13 @@
 
 Global instructions for Claude Code, applied to every session unless a repo-level CLAUDE.md overrides.
 
-This template distills seven conventions from a 2026 retrospective on long-running Claude Code sessions. Each rule prevents a specific high-cost failure mode observed in production work; the lesson it cites lives in [`../docs/lessons/`](../docs/lessons/).
+This template distills nine conventions from a 2026 retrospective on long-running Claude Code sessions, plus updates from the May 2026 post-rework analysis. Each rule prevents a specific high-cost failure mode observed in production work; the lesson it cites lives in [`../docs/lessons/`](../docs/lessons/).
 
 ---
 
-## Conventions from the 2026 retrospective
+## Conventions
 
-A multi-angle analysis of ~31 archived Claude Code sessions found that every high-cost failure mode was a **continuity failure** — the model losing track of the user's intent, rules, or running state across turns. The rules below prevent the specific patterns that cost the most time across Feb–Sep 2026.
+A multi-angle analysis of ~31 archived Claude Code sessions found that every high-cost failure mode was a **continuity failure** — the model losing track of the user's intent, rules, or running state across turns. The rules below prevent the specific patterns that cost the most time. §1 + §2 + §9 were extended in May 2026 after a follow-up analysis of 60 post-rework sessions surfaced three more failure classes.
 
 ### 1. Diagnosis vs. directive
 
@@ -18,17 +18,23 @@ If the user's turn is a diagnosis, observation, or question — **don't act; ask
 
 Only act on turns containing an explicit imperative verb (`fix`, `change`, `edit`, `replace`, `restart`, `run`, `write`, `add`, `remove`). In Swedish, watch for the interrogative/imperative ambiguity — `"kanske vi ska X?"` or `"ska vi X?"` are questions, not directives.
 
-*(Source: [`../docs/lessons/instruction_adherence.md`](../docs/lessons/instruction_adherence.md) §1, §6 — cost: three explicit STOPs in one session; live production fetch code edited while the user was asking status questions.)*
+**Preference statements are not imperatives.** Watch specifically for *"X should be Y"*, *"X borde vara Y"*, *"the right thing is Z"* — these are normative claims, not instructions to act. Read them as: *the user has an opinion about what the code/design should be; they have not asked you to make the change yet.* Respond with the same disambiguation prefix as for diagnoses: *"Reading this as a preference, not an instruction to change X — should I make the change, or is this a note for later?"*
+
+**Curiosity is not a request to build.** When the user asks *"could we X?"*, *"what happens if X?"*, or otherwise expresses exploratory interest — answer the question. Do not start building unless the next turn contains an explicit imperative. Worked example: *"should we move logging to a sidecar?"* is a preference about architecture, not an instruction to refactor. Correct response: *"Reading this as a preference about future architecture, not an instruction to move logging now. Want me to write up the trade-offs, or just keep this as a note?"*
+
+*(Source: [`../docs/lessons/instruction_adherence.md`](../docs/lessons/instruction_adherence.md) §1, §6. Preference + curiosity extensions added 2026-05 after follow-up analysis showed these were the most common surviving §1 misfires.)*
 
 ### 2. Echo-back discipline
 
-When the user states a **session-wide rule** or **tool preference**, repeat it verbatim in the response and flag it as registered. Carry it as a precondition across subsequent turns, not a one-shot instruction.
+**Echo-back is one mechanism applied to three classes of contextual structure.** In each case the protection against drift is the same: repeat the structure back, explicitly, before acting.
 
-Example — user says *"use the preview tool, not Chrome DevTools"*. Response should include: *"Registered: using the preview tool, not Chrome DevTools, for the rest of this session."* Then every subsequent turn that involves browser inspection should re-cite this before acting.
+1. **Rules / tool preferences.** When the user states a session-wide rule (*"use the preview tool, not Chrome DevTools"*), respond with *"Registered: using the preview tool, not Chrome DevTools, for the rest of this session."* Carry it as a precondition across subsequent turns. When writing a `/checkpoint`, populate **Active rules (echo-back)** with every such rule.
 
-When writing a `/checkpoint` snapshot, populate **Active rules (echo-back)** with every such rule stated this session.
+2. **Plans.** When the user states a multi-part plan (*"first X, then Y"*, *"first design the schema, then run the migration"*), echo it back as a numbered list in the first action turn. Drop it into a `TodoWrite` so completion can be tracked mechanically. When a sub-step is done, name both what was completed and what's next *from the plan*, not what seems locally next: *"✅ Step 3 done. Plan says step 4 is X. Proceed?"*
 
-*(Source: [`../docs/lessons/instruction_adherence.md`](../docs/lessons/instruction_adherence.md) §2 — cost: rule stated once at turn 64, violated at turn 82 of a 1,294-turn session.)*
+3. **Source / scope changes.** When the user pivots to a new source (*"based on the JSON file instead of the spreadsheet"*, *"based on X"*), restate the new source explicitly before the next action. If the pivot has cascading consequences (different output shape, different conclusions, different scope), ask a clarifying question before proceeding — echo-back alone isn't enough when the change reshapes what the user is asking for.
+
+*(Source: [`../docs/lessons/instruction_adherence.md`](../docs/lessons/instruction_adherence.md) §2 + post-rework analysis showed echo-back was always about holding contextual structure; rules were just the first class noticed. Plans + sources added 2026-05.)*
 
 ### 3. Running code is read-only
 
@@ -48,7 +54,9 @@ Sessions past 1,000 turns without mid-session re-anchor drift across 4+ sub-topi
 
 **Checkpoint cadence:** at ~50 turns and after any milestone (≥3 commits or a named-feature ship), **offer** a checkpoint — don't auto-write, ask. Two modes per the skill doc: *drift* (every ~50 turns; recovery anchor) and *milestone* (on completion; what shipped, what's next). Skipping a useful checkpoint costs the next session; writing an unneeded one costs ~30s. Asymmetry favours offering.
 
-*(Source: [`../docs/lessons/pitfalls.md`](../docs/lessons/pitfalls.md) §2 — cost: 22 corrections in a single 130k-word session, many undoing work on the wrong sub-topic.)*
+A `PreToolUse` hook at `~/.claude/hooks/cadence-reminder.sh` (see [`hooks/cadence-reminder.sh`](hooks/cadence-reminder.sh)) enforces this cadence mechanically. On every `Bash` call the hook counts user turns in the live JSONL and emits `permissionDecision: "ask"` the first time the session crosses each of {50, 100, 250, 500, 1000}. State persists at `~/.claude/active-sessions/<session-id>.cadence`, so each threshold fires at most once per session. Approve = acknowledge (Claude will offer `/checkpoint` at a natural break); deny = skip this threshold for this session.
+
+*(Source: [`../docs/lessons/pitfalls.md`](../docs/lessons/pitfalls.md) §2 — cost: 22 corrections in a single 130k-word session, many undoing work on the wrong sub-topic. Hook added 2026-05 after a 3,759-turn session ran with zero mid-session checkpoints.)*
 
 ### 5. Front-load the first turn
 
@@ -64,21 +72,69 @@ For every non-trivial change, include a **verification artifact**: a test that p
 
 For trivial changes (typo fix, log line added, variable rename in one file), skip the artifact but still state *how* a human could verify if they wanted.
 
-*(Source: Anthropic Best Practices §1 "Give Claude a way to verify its work" — "This is the single highest-leverage thing you can do." See also [`../docs/lessons/external_patterns.md`](../docs/lessons/external_patterns.md) §Convergence 02.)*
+**Mechanical enforcement:** every commit must end with a `Verified-by:` trailer recording how the change was verified. Examples:
+
+```
+Verified-by: pytest tests/ — 78 passed
+Verified-by: smoke — PYTHONPATH=src python -c "import x" → 0
+Verified-by: trivial — typo fix, no test needed
+Verified-by: cannot-verify — env-dependent; user to verify before close
+```
+
+A `PreToolUse` hook at `~/.claude/hooks/verify-artefakt.sh` (see [`hooks/verify-artefakt.sh`](hooks/verify-artefakt.sh)) returns `permissionDecision: "ask"` when a `git commit` is about to run without the trailer. Approve to ship as-is (rare); deny to regenerate the commit with the trailer appended.
+
+**Proactively suggest commits at natural completion points.** Don't wait to be asked. After a logical unit of work lands (a feature shipped, a milestone reached, a self-contained doc written, a debugging arc resolved), say *"this is a natural commit point — want me to commit?"*. The `commit-only-when-asked` rule still holds: never commit without explicit approval. The amendment is that *asking is now also Claude's responsibility*, not just the user's prompt to initiate.
+
+*(Source: Anthropic Best Practices §1 "Give Claude a way to verify its work" — "This is the single highest-leverage thing you can do." Hook added 2026-05. Proactive-suggest amendment added 2026-05 after a 5-commit batch followed a long arc where Claude waited for explicit "commit?" prompts at every step.)*
 
 ### 7. Attribute agent-authored commits
 
 Every commit authored during a Claude session must end with the trailer:
 
 ```
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 Human stays as `author`; the agent identity goes in the trailer so `git blame` and `git log --author=` still resolve to the human who asked for the change.
 
-A `PreToolUse` hook at `~/.claude/hooks/co-authored-by.sh` (see [`hooks/co-authored-by.sh`](hooks/co-authored-by.sh)) returns `permissionDecision: "ask"` when a `git commit` is about to run without the trailer, surfacing a UI confirmation. Approve to ship as-is (rare — e.g. user pre-composed the message); deny to regenerate the commit with the trailer appended.
+A `PreToolUse` hook at `~/.claude/hooks/co-authored-by.sh` (see [`hooks/co-authored-by.sh`](hooks/co-authored-by.sh)) returns `permissionDecision: "ask"` when a `git commit` is about to run without the trailer. Approve to ship as-is (rare); deny to regenerate the commit with the trailer appended.
 
-*(Source: [`../docs/lessons/multi_user_multi_agent.md`](../docs/lessons/multi_user_multi_agent.md) §C5 — attribution is the unsolved git-layer governance problem. Signed commits + `Co-authored-by:` trailers are the community workaround until native tooling lands.)*
+**Anti-pattern:** do not add `Bash(git commit*` wildcard patterns to project-level `.claude/settings.local.json` allow-lists. These pre-grant commits and silence the §7 enforcement hook UI — a class of trailer-misses traced through 7 sessions all had this root cause.
+
+*(Source: [`../docs/lessons/multi_user_multi_agent.md`](../docs/lessons/multi_user_multi_agent.md) §C5 — attribution is the unsolved git-layer governance problem. Signed commits + `Co-authored-by:` trailers are the community workaround until native tooling lands. Anti-pattern note added 2026-05 after a 46-warning investigation.)*
+
+### 8. Async hand-off conventions
+
+Long-running operations (training jobs, K8s rollouts, image builds, multi-hour fetches) belong on the scheduled-task layer, not in the live session. Use Claude Code's `mcp__scheduled-tasks__create_scheduled_task` (or equivalent cron mechanism) rather than sleeping a Bash command.
+
+**When to schedule rather than run synchronously:**
+
+- Expected duration > 5 min
+- Polling cadence > once / 15 min
+- Outcome should survive session close (e.g. "ping me when the job finishes")
+- Multiple parallel watchers needed
+
+**Convention:** every scheduled task must:
+
+1. Have a self-deletion path — either on completion (success or failure) or after a stated hard expiry. No orphan crons.
+2. Write its terminal output to a path the next session can `/recall` against — usually a checkpoint file or a known sentinel.
+3. Be named so a human can answer *"what is this watching?"* from a list of running tasks alone.
+
+**Failure handling:** if a scheduled task fails three consecutive times, escalate. Don't keep polling silently. Either surface the failure as a `permissionDecision: "ask"` next time the user prompts, or write a sentinel file the next session start picks up.
+
+**Ownership across sessions:** the session that *creates* a scheduled task is responsible for documenting it in the closing `/checkpoint` so the next session knows what to inherit. Otherwise the task is orphaned the moment the originating session ends.
+
+*(Source: post-rework analysis showed async hand-off had become a new directive form ("yes please" → multi-day pipeline) without any rule governing it. Rule added 2026-05.)*
+
+### 9. Artifact minimalism
+
+For visual artifacts (renders, screenshots, diagrams, exports), the default is the bare object in isolation. Do not compose, rotate, style, or integrate it into a larger output unless explicitly asked.
+
+When asked for "the arrow", produce a clean reference arrow — not the arrow rotated to point at something, not the arrow inside a map context, not the arrow with a label. *"Here's the clean arrow. Should I rotate or composite it into <X> next?"*
+
+Same rule, different domain, as the global "don't add features beyond what was asked" — applied specifically to visual output because the asymmetry is sharper there (composition costs are large and hard to undo).
+
+*(Source: post-rework analysis Pattern 5 — recurring "redo the arrow, show the clean arrow without rotation" feedback from one project. Rule added 2026-05.)*
 
 ---
 
@@ -87,8 +143,26 @@ A `PreToolUse` hook at `~/.claude/hooks/co-authored-by.sh` (see [`hooks/co-autho
 - **`/checkpoint`** — mid-session state snapshot to `~/.claude/checkpoints/<repo>/`. Use every ~50 turns in long sessions.
 - **`/brief`** — expand a one-line task into the full briefing template. Use at the start of non-trivial work.
 - **`/spec`** — interview-driven SPEC.md for ambiguous features. Hands off to a fresh session for execution.
-- **`/review`** — spawn a fresh-context reviewer subagent against a recent change. Writer/reviewer pattern from multi-agent research.
-- **`/recall`** — retrieve past session context from `~/.claude/checkpoints/`. Use at the start of a fresh session in any repo where you've previously taken checkpoints.
+- **`/review`** — spawn a fresh-context reviewer subagent against a recent change. Writer/reviewer pattern from multi-agent research. *User-invocable.* Note: the equivalent assistant-side path is to dispatch `subagent_type: "savant-reviewer"` via the `Agent` tool — Claude should self-dispatch reviewers on non-trivial changes without waiting for the user to type `/review`. The slash command is for *when the user wants to initiate review*; the Agent dispatch is for *when Claude judges review is warranted*.
+- **`/recall`** — retrieve past session context from `~/.claude/checkpoints/`. Use at the start of a fresh session in any repo where you've previously taken checkpoints. **Implicit invocation:** bare *"resume"* or *"resume from here"* as turn-0 also triggers it. **Degrades gracefully:** default mode is filesystem listing; semantic search via a vector index is optional and not required.
+- **`/team-loop`** — orchestrate the named-role multi-agent cascade (Product Owner → Architect + Developer parallel → Frontend Builder → optional UX critic). Pauses for user approval between phases. Use when a product needs structured planning + execution and the discovery material already exists. Dispatches `~/.claude/agents/{product-owner,architect,developer,frontend-builder,ux-critic,business-controller,domain-reviewer}.md` personas.
+
+---
+
+## Named-role agents available
+
+For multi-agent work, the starter pack ships seven role personas in [`agents/`](agents/) plus the original savant-reviewer:
+
+- **`product-owner`** — reads discovery material, writes user stories with sources
+- **`architect`** — reads stories + code, produces structural-fitness analysis
+- **`developer`** — per-story gap analysis + sprint plan
+- **`frontend-builder`** — builds the next UI iteration end-to-end with verification
+- **`ux-critic`** — Nielsen + WCAG + interactive task-flow walkthrough
+- **`business-controller`** — financial-control reviewer simulation
+- **`domain-reviewer`** — parameterised domain-expert reviewer (compliance / ethics / scientific peer)
+- **`savant-reviewer`** — uncompromising code-quality review (Identify → Replace → Test)
+
+Dispatch via Claude Code's `Agent` tool with `subagent_type: "<name>"`.
 
 ---
 
@@ -97,3 +171,4 @@ A `PreToolUse` hook at `~/.claude/hooks/co-authored-by.sh` (see [`hooks/co-autho
 - Checkpoints: `~/.claude/checkpoints/<repo>/`
 - Skills: `~/.claude/skills/<name>/SKILL.md`
 - Hooks: `~/.claude/hooks/<name>.sh` (registered in `~/.claude/settings.json`)
+- Agents: `~/.claude/agents/<name>.md`
