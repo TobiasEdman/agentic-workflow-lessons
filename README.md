@@ -7,6 +7,12 @@ Two artifacts from a 2026 retrospective on long-running Claude Code sessions, **
 
 The original sessions, raw transcripts, and per-repo strategy notes stay private; this repo carries only the portable workflow patterns and the operational scaffolding to run them.
 
+## Companion repo
+
+The **multi-agent toolkit** that the named-role agents and `/team-loop` skill in this pack are designed to work with lives at [**`multi-agentic-public`**](https://github.com/TobiasEdman/multi-agentic-public) — vendor-neutral spec + reference implementation for writer/reviewer pattern, branch-per-agent, file-locks, and multi-vendor attribution. AGENTS.md as primary; CLAUDE.md / CODEX.md / MISTRAL.md as vendor-specific addenda.
+
+If you came here to run the multi-agent cascade in production, install this pack first (it's the operator-discipline layer), then read the multi-agentic spec for the cross-runtime coordination layer.
+
 ## What's in here
 
 ```
