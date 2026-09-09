@@ -2,7 +2,8 @@ name: agents-integrity
 
 # Verifies that the managed coordination artifacts installed under .agents/
 # still match what the installer recorded in .agents/install-manifest.json.
-# Owned files must hash exactly; managed blocks in shared files (AGENTS.md,
+# Installed files ("file") and files that superseded a legacy template
+# ("replace") must both hash exactly; managed blocks in shared files (AGENTS.md,
 # CLAUDE.md) must still carry their fragment verbatim. Catches truncation,
 # corruption, and hand-edits of managed content — and gives this repository
 # a repo-native terminal check, which the cross-runtime merge protocol
@@ -49,7 +50,7 @@ jobs:
               if not path.is_file():
                   failures.append(f"{path}: declared in manifest but missing")
                   continue
-              if kind == "file":
+              if kind in ("file", "replace"):
                   digest = hashlib.sha256(path.read_bytes()).hexdigest()
                   expected = entry.get("after_sha256")
                   if digest != expected:
