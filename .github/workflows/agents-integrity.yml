@@ -1,0 +1,90 @@
+name: agents-integrity
+
+# Verifies that the managed coordination artifacts installed under .agents/
+# still match what the installer recorded in .agents/install-manifest.json.
+# Installed files ("file") and files that superseded a legacy template
+# ("replace") must both hash exactly; managed blocks in shared files (AGENTS.md,
+# CLAUDE.md) must still carry their fragment verbatim. Catches truncation,
+# corruption, and hand-edits of managed content — and gives this repository
+# a repo-native terminal check, which the cross-runtime merge protocol
+# requires before any PASS can be issued.
+#
+# Deliberately dependency-free: python3 stdlib only, no install step.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify .agents install manifest integrity
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          manifest_path = Path(".agents/install-manifest.json")
+          if not manifest_path.is_file():
+              sys.exit(f"FAIL: {manifest_path} is missing")
+
+          try:
+              manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          except ValueError as error:
+              sys.exit(f"FAIL: {manifest_path} is not valid JSON: {error}")
+
+          artifacts = manifest.get("artifacts")
+          if not isinstance(artifacts, list) or not artifacts:
+              sys.exit("FAIL: manifest declares no artifacts")
+
+          failures = []
+          checked = 0
+          for entry in artifacts:
+              path = Path(entry["path"])
+              kind = entry.get("kind")
+              if not path.is_file():
+                  failures.append(f"{path}: declared in manifest but missing")
+                  continue
+              if kind in ("file", "replace"):
+                  digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                  expected = entry.get("after_sha256")
+                  if digest != expected:
+                      failures.append(
+                          f"{path}: sha256 {digest} does not match manifest {expected}"
+                      )
+                  checked += 1
+              elif kind == "block":
+                  # Shared with human-authored content, so only the managed
+                  # fragment is pinned — the rest of the file may change.
+                  fragment = entry.get("fragment", "")
+                  if not fragment:
+                      failures.append(f"{path}: manifest block entry has no fragment")
+                  elif fragment not in path.read_text(encoding="utf-8"):
+                      failures.append(f"{path}: managed block fragment is absent or altered")
+                  checked += 1
+              else:
+                  failures.append(f"{path}: unknown manifest kind {kind!r}")
+
+          # The schemas are consumed by tooling in other repositories, so a
+          # malformed one here breaks them silently rather than locally.
+          for name in ("schema.json", "handoff-schema.json", "toolchain-lock.json"):
+              candidate = Path(".agents") / name
+              if candidate.is_file():
+                  try:
+                      json.loads(candidate.read_text(encoding="utf-8"))
+                  except ValueError as error:
+                      failures.append(f"{candidate}: invalid JSON: {error}")
+
+          if failures:
+              print("FAIL — managed coordination state does not match the manifest:")
+              for failure in failures:
+                  print(f"  - {failure}")
+              sys.exit(1)
+
+          print(f"OK — {checked} managed artifact(s) verified against the manifest")
+          PY
