@@ -1,8 +1,14 @@
 # Starter Pack — Conventions, Skills, Hooks, Agents
 
+> **Compatibility snapshot.** This directory preserves the original
+> Claude-oriented intervention pack. The maintained Claude/Codex-neutral policy,
+> skills and templates now live in `multi-agentic-public`. Do not start a new
+> installation from this snapshot.
+
 A drop-in `~/.claude/` configuration distilled from the lessons in [`../docs/lessons/`](../docs/lessons/). One CLAUDE.md template, six user-invocable skills, four enforcement hooks, eight named-role agent personas, and three analysis scripts. Together they implement the nine conventions from the 2026 retrospective + May 2026 follow-up.
 
-If the [lessons](../docs/lessons/) are *what was learned*, this pack is *how to apply it from day one*.
+If the [lessons](../docs/lessons/) are *what was learned*, this pack records how
+the controls were historically applied in Claude Code.
 
 ## Contents
 
@@ -36,7 +42,11 @@ starter-pack/
     └── daily_drift.py         — daily drift report; intended for scheduled invocation
 ```
 
-## Install
+## Historical install (compatibility only)
+
+The commands below reproduce the old Claude-only setup. New installations
+should use `multi-agentic-public`, whose `AGENTS.md`-first layout supports both
+Claude and Codex.
 
 ```bash
 # 1. Conventions (review the template first; then copy to ~/.claude/CLAUDE.md)

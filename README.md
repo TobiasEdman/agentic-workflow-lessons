@@ -1,17 +1,23 @@
-# Agentic Workflow — Lessons & Starter Pack
+# Agentic Workflow — Session evidence and lessons
 
-Two artifacts from a 2026 retrospective on long-running Claude Code sessions, **updated May 2026** with a follow-up analysis covering the post-rework window:
+Two artifacts from a 2026 retrospective on long-running agentic coding
+sessions, updated with follow-up analyses:
 
 1. **[Lessons](docs/lessons/)** — observations distilled from ~31 archived sessions (Feb–Sep 2026) + 60 post-rework sessions (Apr–May 2026). The *what was learned* and *what changed after we did something about it*.
-2. **[Starter pack](starter-pack/)** — a drop-in `~/.claude/` configuration (CLAUDE.md template with 9 conventions, 6 skills, 4 hooks, 8 named-role agents, 3 analysis scripts) that operationalizes the lessons. The *how to apply it from day one*.
+2. **[Starter-pack compatibility snapshot](starter-pack/)** — the historical
+   Claude-oriented operational pack used during the original intervention.
 
 The original sessions, raw transcripts, and per-repo strategy notes stay private; this repo carries only the portable workflow patterns and the operational scaffolding to run them.
 
 ## Companion repo
 
-The **multi-agent toolkit** that the named-role agents and `/team-loop` skill in this pack are designed to work with lives at [**`multi-agentic-public`**](https://github.com/TobiasEdman/multi-agentic-public) — vendor-neutral spec + reference implementation for writer/reviewer pattern, branch-per-agent, file-locks, and multi-vendor attribution. AGENTS.md as primary; CLAUDE.md / CODEX.md / MISTRAL.md as vendor-specific addenda.
+The maintained operational governance now lives in
+[**`multi-agentic-public`**](https://github.com/TobiasEdman/multi-agentic-public):
+vendor-neutral policy and skills with `AGENTS.md` as primary, plus thin
+`CLAUDE.md` and `CODEX.md` runtime addenda.
 
-If you came here to run the multi-agent cascade in production, install this pack first (it's the operator-discipline layer), then read the multi-agentic spec for the cross-runtime coordination layer.
+For new installations, use `multi-agentic-public`. Use this repository to
+understand the evidence and why each graduated control exists.
 
 ## What's in here
 
@@ -34,8 +40,8 @@ docs/lessons/                       — the observational layer
 ├── continuous_analysis.md          — how the workflow learns from itself
 └── omni_rag_contract.md            — minimal contract for a cross-session memory layer
 
-starter-pack/                       — the operational layer
-├── README.md                       — install instructions and design notes
+starter-pack/                       — historical compatibility snapshot
+├── README.md                       — archived install notes and design context
 ├── CLAUDE.md.template              — nine conventions (§1–§9), ready to copy to ~/.claude/CLAUDE.md
 ├── skills/                         — /checkpoint, /brief, /spec, /review, /recall, /team-loop
 ├── hooks/                          — active-jobs-guard, co-authored-by, verify-artefakt, cadence-reminder
@@ -49,7 +55,10 @@ starter-pack/                       — the operational layer
 Two paths in:
 
 - **If you want to understand what was learned**, start with [`docs/lessons/workflow_patterns.md`](docs/lessons/workflow_patterns.md) and follow your interest. The `*_raw/` directories are the underlying notes if you want to trace a claim.
-- **If you want to apply it**, go to [`starter-pack/README.md`](starter-pack/README.md). It explains the install, what each piece does, and how to customize. Read the [CLAUDE.md template](starter-pack/CLAUDE.md.template) before copying — the nine rules are a starting point, not a sacred set.
+- **If you want to apply it today**, use
+  [`multi-agentic-public`](https://github.com/TobiasEdman/multi-agentic-public).
+  The local [`starter-pack/`](starter-pack/) is retained only for historical
+  compatibility and provenance.
 
 The lessons assume you're using Claude Code (or a comparable agentic coding harness) on real engineering work, not toy tasks. They are biased toward sessions in the 50–1,300 turn range, mixed-language projects (Swedish/English), and codebases that touch ML training, geospatial data, and orbital simulation.
 
@@ -61,7 +70,18 @@ If a lesson reads as ungrounded or hand-wavy in places, that's usually where a c
 
 ## Provenance
 
-Source: a private retrospective archive that ingests Claude Code session transcripts, parses them into structured JSONL, and produces analytical reports. As of May 2026, the **analysis scripts** are now in [`starter-pack/scripts/`](starter-pack/scripts/) — they read `~/.claude/projects/<encoded-cwd>/*.jsonl` directly and don't depend on any private data layout. They run anywhere Claude Code does. The post-rework lessons published here are the durable output of that pipeline.
+Source: a private retrospective archive that ingests Claude and Codex session
+transcripts, normalizes them into structured events, and produces analytical
+reports. The historical Claude-only analysis scripts remain in
+[`starter-pack/scripts/`](starter-pack/scripts/) for reproducibility. The
+maintained multi-runtime pipeline is private; the post-rework lessons published
+here are its sanitized, durable output.
+
+## Maintaining this repository
+
+The repository's role and working rules (redaction, provenance, read order)
+are in [`docs/REPOSITORY.md`](docs/REPOSITORY.md). `AGENTS.md` and `CLAUDE.md`
+are managed by `agentic-task` and carry only the coordination rules.
 
 ## License
 
